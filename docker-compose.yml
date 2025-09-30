@@ -47,8 +47,13 @@ services:
       MYSQL_DATABASE: survey
       MYSQL_USER: survey
       MYSQL_PASSWORD: survey
-    ports: ["33060:3306"]
-    command: ["--innodb-buffer-pool-size=1G","--innodb-redo-log-capacity=1G","--skip-log-bin"]
+    ports: ["3307:3306"]
+    command: [
+      "--innodb-buffer-pool-size=1G",
+      "--innodb-redo-log-capacity=1G",
+      "--skip-log-bin",
+      "--bind-address=0.0.0.0"
+    ]
     volumes:
       - mysql_data:/var/lib/mysql
     networks: [appnet]
