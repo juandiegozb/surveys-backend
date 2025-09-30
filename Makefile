@@ -170,8 +170,8 @@ key:
 .PHONY: localstack-init
 localstack-init:
 	@echo -e "$(BLUE)Initializing LocalStack...$(NC)"
-	@$(DOCKER_COMPOSE) exec localstack awslocal s3 mb s3://$$AWS_BUCKET || true
-	@$(DOCKER_COMPOSE) exec localstack awslocal sqs create-queue --queue-name $$SQS_QUEUE || true
+	@$(DOCKER_COMPOSE) exec localstack awslocal s3 mb s3://survey-bucket || true
+	@$(DOCKER_COMPOSE) exec localstack awslocal sqs create-queue --queue-name survey-jobs || true
 
 ##@ Utilities
 .PHONY: ps
