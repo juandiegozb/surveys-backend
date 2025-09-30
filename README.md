@@ -34,9 +34,9 @@ Survey App is a robust application for creating, managing, and analyzing surveys
 
 ### Quick Installation
 
-1. **Clone the repository**
+1. **Clone the repository by SSH**
    ```bash
-   git clone <repository-url>
+   git clone git@github.com:juandiegozb/surveys-backend.git
    cd surveys_app
    ```
 
