@@ -3,7 +3,15 @@
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
->
+         processIsolation="false"
+         stopOnFailure="false"
+         executionOrder="random"
+         failOnWarning="true"
+         failOnRisky="true"
+         failOnEmptyTestSuite="true"
+         beStrictAboutOutputDuringTests="true"
+         cacheDirectory=".phpunit.cache"
+         backupStaticProperties="false">
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
@@ -19,16 +27,29 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
-        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="APP_KEY" value="base64:2fl+Ktvkfl+Fuz4Qp/A75G2RTiWVA/ZoKX87C4Ack7c="/>
+        <env name="APP_DEBUG" value="true"/>
+        <env name="APP_URL" value="http://localhost"/>
+
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="CACHE_DRIVER" value="array"/>
         <env name="CACHE_STORE" value="array"/>
+
+        <!-- Force SQLite in-memory database -->
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_FOREIGN_KEYS" value="true"/>
+
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
-        <env name="PULSE_ENABLED" value="false"/>
+        <env name="SESSION_LIFETIME" value="120"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
-        <env name="NIGHTWATCH_ENABLED" value="false"/>
+
+        <!-- Disable broadcasting -->
+        <env name="BROADCAST_DRIVER" value="log"/>
+
+        <!-- Disable file uploads during testing -->
+        <env name="FILESYSTEM_DISK" value="local"/>
     </php>
 </phpunit>

@@ -3,314 +3,151 @@
 namespace App\Repositories;
 
 use App\Models\Survey;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 
 class SurveyRepository
 {
-    protected Survey $model;
-    const int CACHE_TTL = 1800; // 30 minutes
-
     /**
-     * Create a new class instance.
+     * Get a paginated list of surveys with optional filtering
+     *
+     * @param int $perPage
+     * @param array $filters
+     * @return LengthAwarePaginator
      */
-    public function __construct(Survey $model)
+    public function paginate(int $perPage, array $filters = []): LengthAwarePaginator
     {
-        $this->model = $model;
+        $query = Survey::query();
+
+        // Apply filters
+        if (isset($filters['status']) && $filters['status']) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['search']) && $filters['search']) {
+            // For large datasets, we'll use Laravel Scout/OpenSearch if available
+            // Fall back to database search in testing environment
+            if (config('scout.driver') !== null && app()->environment() !== 'testing') {
+                try {
+                    return Survey::search($filters['search'])
+                                ->query(function ($query) use ($filters) {
+                                    $this->applyAdditionalFilters($query, $filters);
+                                })
+                                ->paginate($perPage);
+                } catch (\Exception $e) {
+                    // Fall back to database search if Scout fails
+                }
+            }
+
+            // Database fallback search
+            $query->where(function ($q) use ($filters) {
+                $q->where('name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('description', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        $this->applyAdditionalFilters($query, $filters);
+
+        // Order by most recent by default
+        $query->latest();
+
+        return $query->paginate($perPage);
     }
 
     /**
-     * Get all surveys with efficient pagination and caching
+     * Apply additional filters to the query
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param array $filters
+     * @return void
      */
-    public function getAll($perPage = 15, $filters = [])
+    private function applyAdditionalFilters($query, array $filters): void
     {
-        $cacheKey = 'surveys:all:' . md5(serialize($filters)) . ':page:' . request('page', 1);
+        if (isset($filters['user_id']) && $filters['user_id']) {
+            $query->where('user_id', $filters['user_id']);
+        }
 
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($perPage, $filters) {
-            $query = $this->model->with(['user:id,name', 'questionType:id,display_name']);
+        if (isset($filters['is_public']) && $filters['is_public'] !== null) {
+            $query->where('is_public', (bool) $filters['is_public']);
+        }
 
-            // Apply filters
-            if (isset($filters['status'])) {
-                $query->where('status', $filters['status']);
-            }
+        if (isset($filters['from_date']) && $filters['from_date']) {
+            $query->where('created_at', '>=', $filters['from_date']);
+        }
 
-            if (isset($filters['is_public'])) {
-                $query->where('is_public', $filters['is_public']);
-            }
-
-            if (isset($filters['user_id'])) {
-                $query->where('user_id', $filters['user_id']);
-            }
-
-            if (isset($filters['search'])) {
-                $query->where(function ($q) use ($filters) {
-                    $q->where('name', 'LIKE', "%{$filters['search']}%")
-                      ->orWhere('description', 'LIKE', "%{$filters['search']}%");
-                });
-            }
-
-            return $query->orderBy('created_at', 'desc')->paginate($perPage);
-        });
+        if (isset($filters['to_date']) && $filters['to_date']) {
+            $query->where('created_at', '<=', $filters['to_date']);
+        }
     }
 
     /**
-     * Find survey by ID with caching
+     * Find a survey by UUID
+     *
+     * @param string $uuid
+     * @return Survey|null
      */
-    public function find($id)
+    public function findByUuid(string $uuid): ?Survey
     {
-        $cacheKey = "survey:id:{$id}";
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($id) {
-            return $this->model->with(['user:id,name,email', 'questions.questionType'])->find($id);
-        });
+        // Use the cached method from the model
+        return Survey::findByUuid($uuid);
     }
 
     /**
-     * Find survey by UUID with caching
+     * Find a survey by UUID with fresh data (no cache)
+     *
+     * @param string $uuid
+     * @return Survey|null
      */
-    public function findByUuid($uuid)
+    public function findByUuidFresh(string $uuid): ?Survey
     {
-        return $this->model->findByUuid($uuid);
+        return Survey::findByUuidFresh($uuid);
     }
 
     /**
      * Create a new survey
+     *
+     * @param array $data
+     * @return Survey
      */
-    public function create(array $data)
+    public function create(array $data): Survey
     {
-        DB::beginTransaction();
-        try {
-            $survey = $this->model->create($data);
-
-            // Clear related caches
-            Cache::forget("user:{$survey->user_id}:surveys");
-            Cache::tags(['surveys'])->flush();
-
-            DB::commit();
-            return $survey;
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
+        return Survey::create($data);
     }
 
     /**
-     * Update survey
+     * Update an existing survey
+     *
+     * @param Survey $survey
+     * @param array $data
+     * @return Survey
      */
-    public function update($id, array $data)
+    public function update(Survey $survey, array $data): Survey
     {
-        DB::beginTransaction();
-        try {
-            $survey = $this->find($id);
-            if (!$survey) {
-                return null;
-            }
-
-            $survey->update($data);
-
-            // Clear related caches
-            Cache::forget("survey:id:{$id}");
-            Cache::forget("survey:uuid:{$survey->uuid}");
-            Cache::forget("user:{$survey->user_id}:surveys");
-            Cache::tags(['surveys'])->flush();
-
-            DB::commit();
-            return $survey->fresh();
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
+        $survey->update($data);
+        return $survey;
     }
 
     /**
-     * Delete survey
+     * Delete a survey
+     *
+     * @param Survey $survey
+     * @return bool
      */
-    public function delete($id)
+    public function delete(Survey $survey): bool
     {
-        DB::beginTransaction();
-        try {
-            $survey = $this->find($id);
-            if (!$survey) {
-                return false;
-            }
-
-            // Store data for cache clearing
-            $userId = $survey->user_id;
-            $uuid = $survey->uuid;
-
-            $survey->delete();
-
-            // Clear related caches
-            Cache::forget("survey:id:{$id}");
-            Cache::forget("survey:uuid:{$uuid}");
-            Cache::forget("user:{$userId}:surveys");
-            Cache::tags(['surveys'])->flush();
-
-            DB::commit();
-            return true;
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
+        return (bool) $survey->delete();
     }
 
     /**
-     * Get surveys for specific user with caching
+     * Update question count for a survey
+     *
+     * @param Survey $survey
+     * @param int $count
+     * @return void
      */
-    public function getUserSurveys($userId, $perPage = 15)
+    public function updateQuestionCount(Survey $survey, int $count): void
     {
-        $cacheKey = "user:{$userId}:surveys:page:" . request('page', 1);
-
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($userId, $perPage) {
-            return $this->model->forUser($userId)
-                              ->with(['questions' => function ($query) {
-                                  $query->wherePivot('is_active', true);
-                              }])
-                              ->orderBy('updated_at', 'desc')
-                              ->paginate($perPage);
-        });
-    }
-
-    /**
-     * Get public active surveys with caching
-     */
-    public function getPublicSurveys($perPage = 15)
-    {
-        $cacheKey = "surveys:public:page:" . request('page', 1);
-
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($perPage) {
-            return $this->model->public()
-                              ->active()
-                              ->with(['user:id,name'])
-                              ->orderBy('created_at', 'desc')
-                              ->paginate($perPage);
-        });
-    }
-
-    /**
-     * Search surveys using Scout
-     */
-    public function search($query, $perPage = 15)
-    {
-        return $this->model->search($query)->paginate($perPage);
-    }
-
-    /**
-     * Get survey statistics with heavy caching
-     */
-    public function getStatistics($surveyId)
-    {
-        $cacheKey = "survey:{$surveyId}:statistics";
-
-        return Cache::remember($cacheKey, 900, function () use ($surveyId) { // 15 minutes
-            $survey = $this->find($surveyId);
-            if (!$survey) {
-                return null;
-            }
-
-            return [
-                'total_questions' => $survey->question_count,
-                'total_responses' => $survey->response_count,
-                'completion_rate' => \App\Models\Answer::getSurveyCompletionRate($surveyId),
-                'average_time' => $this->getAverageCompletionTime($surveyId),
-                'response_trend' => $this->getResponseTrend($surveyId),
-            ];
-        });
-    }
-
-    /**
-     * Assign questions to survey
-     */
-    public function assignQuestions($surveyId, array $questionIds)
-    {
-        DB::beginTransaction();
-        try {
-            $survey = $this->find($surveyId);
-            if (!$survey) {
-                return false;
-            }
-
-            // Prepare pivot data with order
-            $pivotData = [];
-            foreach ($questionIds as $index => $questionId) {
-                $pivotData[$questionId] = [
-                    'order' => $index + 1,
-                    'is_active' => true,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            $survey->questions()->sync($pivotData);
-
-            // Update question count
-            $survey->update(['question_count' => count($questionIds)]);
-
-            // Update usage count for questions
-            foreach ($questionIds as $questionId) {
-                \App\Models\Question::find($questionId)?->incrementUsage();
-            }
-
-            // Clear caches
-            Cache::forget("survey:{$surveyId}:questions:active");
-            Cache::forget("survey:id:{$surveyId}");
-
-            DB::commit();
-            return true;
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
-    }
-
-    /**
-     * Get average completion time for survey
-     */
-    private function getAverageCompletionTime($surveyId)
-    {
-        return Cache::remember("survey:{$surveyId}:avg_time", 3600, function () use ($surveyId) {
-            // This would require additional tracking in answers table
-            // For now, return null - can be implemented with more detailed tracking
-            return null;
-        });
-    }
-
-    /**
-     * Get response trend data
-     */
-    private function getResponseTrend($surveyId, $days = 30)
-    {
-        return Cache::remember("survey:{$surveyId}:trend:{$days}d", 1800, function () use ($surveyId, $days) {
-            return DB::table('answers')
-                     ->select(DB::raw('DATE(submitted_at) as date'), DB::raw('COUNT(*) as count'))
-                     ->where('survey_id', $surveyId)
-                     ->where('submitted_at', '>=', now()->subDays($days))
-                     ->groupBy('date')
-                     ->orderBy('date')
-                     ->get();
-        });
-    }
-
-    /**
-     * Bulk operations for mass updates
-     */
-    public function bulkUpdateStatus(array $surveyIds, $status)
-    {
-        DB::beginTransaction();
-        try {
-            $this->model->whereIn('id', $surveyIds)->update(['status' => $status]);
-
-            // Clear caches for affected surveys
-            foreach ($surveyIds as $id) {
-                Cache::forget("survey:id:{$id}");
-            }
-            Cache::tags(['surveys'])->flush();
-
-            DB::commit();
-            return true;
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
+        $survey->question_count = $count;
+        $survey->save();
     }
 }

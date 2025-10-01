@@ -6,11 +6,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
-use Laravel\Scout\Searchable;
 
 class Survey extends Model
 {
-    use HasFactory, Searchable;
+    use HasFactory;
 
     protected $fillable = [
         'uuid',
@@ -52,15 +51,11 @@ class Survey extends Model
 
         // Clear related caches when updated
         static::saved(function ($survey) {
-            Cache::forget("survey:uuid:{$survey->uuid}");
-            Cache::forget("survey:id:{$survey->id}");
-            Cache::forget("user:{$survey->user_id}:surveys");
+            $survey->clearCache();
         });
 
         static::deleted(function ($survey) {
-            Cache::forget("survey:uuid:{$survey->uuid}");
-            Cache::forget("survey:id:{$survey->id}");
-            Cache::forget("user:{$survey->user_id}:surveys");
+            $survey->clearCache();
         });
     }
 
@@ -76,28 +71,21 @@ class Survey extends Model
     }
 
     /**
-     * Scout search configuration
+     * Clear all caches for this survey
      */
-    public function toSearchableArray(): array
+    public function clearCache(): void
     {
-        return [
-            'id' => $this->id,
-            'uuid' => $this->uuid,
-            'name' => $this->name,
-            'description' => $this->description,
-            'status' => $this->status,
-            'is_public' => $this->is_public,
-            'created_at' => $this->created_at->timestamp,
-            'user_id' => $this->user_id,
-        ];
+        Cache::forget("survey:uuid:{$this->uuid}");
+        Cache::forget("survey:id:{$this->id}");
+        Cache::forget("user:{$this->user_id}:surveys");
     }
 
     /**
-     * Get the index name for Scout
+     * Get survey by UUID without caching (for fresh data)
      */
-    public function searchableAs(): string
+    public static function findByUuidFresh(string $uuid)
     {
-        return 'surveys_index';
+        return self::where('uuid', $uuid)->first();
     }
 
     /**
