@@ -11,11 +11,11 @@ return [
     | to the search service. You should adjust this based on your needs.
     |
     | Supported: "algolia", "meilisearch", "typesense",
-    |            "database", "collection", "null"
+    | "database", "collection", "null"
     |
     */
 
-    'driver' => env('SCOUT_DRIVER', 'opensearch'),
+    'driver' => env('SCOUT_DRIVER', 'null'),
 
     /*
     |--------------------------------------------------------------------------

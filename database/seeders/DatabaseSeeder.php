@@ -15,7 +15,11 @@ class DatabaseSeeder extends Seeder
         // Create a test user only if it doesn't exist
         User::firstOrCreate(
             ['email' => 'test@example.com'],
-            ['name' => 'Test User']
+            [
+                'name' => 'Test User',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]
         );
 
         // Seed question types
